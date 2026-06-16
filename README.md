@@ -147,8 +147,3 @@ python mtlogin.py [options]
 
 删除你配置的数据库文件（例如 `./mtlogin.db`）后重跑，或在失败策略触发时让脚本自动清理。
 
-## 安全建议
-
-- 不要把真实账号密码、TOTP 密钥、Bot Token 提交到 GitHub
-- 建议通过环境变量注入敏感配置
-- 建议将数据库文件和日志文件加入 `.gitignore`
