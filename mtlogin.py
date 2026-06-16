@@ -355,12 +355,12 @@ class JobServer:
             f"Uploaded: {self.client.uploaded}\nDownloaded: {self.client.downloaded}\n"
             f"Bonus: {self.client.bonus}\nLast login: {self.client.last_login}\nLast browse: {self.client.last_browse}"
         )
-        self._notify(msg)
+        self._notify(msg, is_error=False)
 
     def notify_error(self, err: str) -> None:
-        self._notify(f"m-team login failed err={err}")
+        self._notify(f"m-team login failed err={err}", is_error=True)
 
-    def _notify(self, message: str) -> None:
+    def _notify(self, message: str, is_error: bool = False) -> None:
         if self.cfg.qqpush:
             resp = std_requests.get(
                 f"https://qmsg.zendee.cn/send/{self.cfg.qqpush_token}",
@@ -371,7 +371,7 @@ class JobServer:
         if self.cfg.feishu_webhookurl:
             resp = std_requests.post(self.cfg.feishu_webhookurl, json={"msg_type": "text", "content": {"text": message}}, timeout=10)
             log_info(f"Feishu status={resp.status_code} body={resp.text}")
-        if self.cfg.feishu_app_id and self.cfg.feishu_app_secret and self.cfg.feishu_receive_id:
+        if is_error and self.cfg.feishu_app_id and self.cfg.feishu_app_secret and self.cfg.feishu_receive_id:
             try:
                 token_resp = std_requests.post(
                     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
