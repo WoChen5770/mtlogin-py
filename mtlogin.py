@@ -211,15 +211,15 @@ class MTClient:
             allow_redirects=False,
         )
 
-    def login(self) -> None:
+    def login(self, force: bool = False) -> None:
         log_info("Starting login flow")
         ck, did = self.store.get(DB_KEY), self.store.get(DID_KEY)
-        if ck and did and not self.cfg.skip_cache:
+        if ck and did and not self.cfg.skip_cache and not force:
             self.token, self.did = ck, did
             log_info("Detected local token/did cache, skipping login")
             return
-        if self.cfg.skip_cache:
-            log_info("skip-cache enabled, forcing fresh login")
+        if self.cfg.skip_cache or force:
+            log_info("Forcing fresh login (skip_cache or retry after token expiration)")
         ts = self._ts_ms()
         payload = {
             "username": self.cfg.username,
@@ -317,6 +317,27 @@ class JobServer:
             self.failed = 0
             self.notify_success()
             log_info("Task execution succeeded")
+        except RuntimeError as exc:
+            if "Full authentication is required" in str(exc):
+                log_info("Cached token expired, retrying with fresh login (username+password+TOTP)")
+                try:
+                    self.client.login(force=True)
+                    self.client.check()
+                    self.failed = 0
+                    self.notify_success()
+                    log_info("Task execution succeeded after retry")
+                    return
+                except Exception as retry_exc:
+                    self.failed += 1
+                    self.notify_error(str(retry_exc))
+                    log_info(f"Task execution failed after retry: {retry_exc}")
+                    return
+            self.failed += 1
+            if self.cfg.cookie_mode == "strict" or self.failed > 5:
+                self.client.store.delete(DB_KEY)
+                log_info("Triggered local token cleanup")
+            self.notify_error(str(exc))
+            log_info(f"Task execution failed: {exc}")
         except Exception as exc:
             self.failed += 1
             if self.cfg.cookie_mode == "strict" or self.failed > 5:
