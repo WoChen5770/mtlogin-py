@@ -77,6 +77,9 @@ class Config:
     tgbot_proxy: str = ""
     feishu_webhookurl: str = ""
     feishu_secret: str = ""
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
+    feishu_receive_id: str = ""
     ntfy_url: str = ""
     ntfy_topic: str = ""
     ntfy_user: str = ""
@@ -368,6 +371,34 @@ class JobServer:
         if self.cfg.feishu_webhookurl:
             resp = std_requests.post(self.cfg.feishu_webhookurl, json={"msg_type": "text", "content": {"text": message}}, timeout=10)
             log_info(f"Feishu status={resp.status_code} body={resp.text}")
+        if self.cfg.feishu_app_id and self.cfg.feishu_app_secret and self.cfg.feishu_receive_id:
+            try:
+                token_resp = std_requests.post(
+                    "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                    json={"app_id": self.cfg.feishu_app_id, "app_secret": self.cfg.feishu_app_secret},
+                    timeout=10,
+                )
+                token = token_resp.json().get("tenant_access_token")
+                if token:
+                    msg_resp = std_requests.post(
+                        "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=user_id",
+                        headers={
+                            "Content-Type": "application/json; charset=utf-8",
+                            "Authorization": f"Bearer {token}",
+                        },
+                        json={
+                            "content": json.dumps({"text": message}, ensure_ascii=False),
+                            "msg_type": "text",
+                            "receive_id": self.cfg.feishu_receive_id,
+                        },
+                        timeout=10,
+                    )
+                    log_info(f"FeishuBot status={msg_resp.status_code} body={msg_resp.text}")
+                else:
+                    log_info(f"FeishuBot token failed: {token_resp.text}")
+            except Exception as e:
+                log_info(f"FeishuBot error: {e}")
         if self.cfg.tgbot_token and self.cfg.tgbot_chat_id:
             tg_api = f"https://api.telegram.org/bot{self.cfg.tgbot_token}/sendMessage"
             proxies = None
@@ -425,6 +456,9 @@ def load_config() -> Config:
         tgbot_proxy=os.getenv("TGBOT_PROXY", ""),
         feishu_webhookurl=os.getenv("FEISHU_WEBHOOKURL", ""),
         feishu_secret=os.getenv("FEISHU_SECRET", ""),
+        feishu_app_id=os.getenv("FEISHU_APP_ID", ""),
+        feishu_app_secret=os.getenv("FEISHU_APP_SECRET", ""),
+        feishu_receive_id=os.getenv("FEISHU_RECEIVE_ID", ""),
         ntfy_url=os.getenv("NTFY_URL", ""),
         ntfy_topic=os.getenv("NTFY_TOPIC", ""),
         ntfy_user=os.getenv("NTFY_USER", ""),
