@@ -189,18 +189,10 @@ curl-cffi
 | `MT_M_TEAM_AUTH` | 否 | 已有 Authorization token，有值时跳过账号密码登录 |
 | `MT_M_TEAM_DID` | 否 | 设备 DID |
 | `MT_PROXY` | 否 | HTTP/HTTPS 代理地址 |
-| `MT_DB_PATH` | 否 | SQLite 缓存路径，默认 `/data/cookie.db` |
+| `MT_DB_PATH` | 否 | SQLite 缓存路径，默认 `/ql/data/db/mt/cookie.db` |
 | `MT_SKIP_CACHE` | 否 | 设置为 `1`/`true` 时跳过本地 token 缓存 |
 | `MT_VERBOSE_CONFIG` | 否 | 设置为 `1`/`true` 时打印脱敏启动配置 |
 | `MT_DRY_RUN` | 否 | 设置为 `1`/`true` 时只验证变量解析，不请求网络 |
-| `MT_TGBOT_TOKEN` | 否 | Telegram Bot Token |
-| `MT_TGBOT_CHAT_ID` | 否 | Telegram Chat ID |
-| `MT_TGBOT_PROXY` | 否 | Telegram 代理 |
-| `MT_QQPUSH` | 否 | QQ 推送目标 QQ 号 |
-| `MT_QQPUSH_TOKEN` | 否 | QQPush Token |
-| `MT_FEISHU_WEBHOOKURL` | 否 | 飞书 Webhook |
-| `MT_NTFY_URL` | 否 | ntfy 服务地址 |
-| `MT_NTFY_TOPIC` | 否 | ntfy topic |
 
 ### 多账号配置
 
@@ -210,18 +202,18 @@ curl-cffi
 export MT_USERNAME="user1&user2"
 export MT_PASSWORD="pass1&pass2"
 export MT_TOTPSECRET="totp_secret1&totp_secret2"
-export MT_DB_PATH="/ql/data/db/mtlogin_user1.db&/ql/data/db/mtlogin_user2.db"
+export MT_DB_PATH="/ql/data/db/mt/user1.db&/ql/data/db/mt/user2.db"
 ```
 
-如果某个变量只配置一个值，会作为所有账号的公共配置使用，例如公共代理或公共通知配置：
+如果某个变量只配置一个值，会作为所有账号的公共配置使用，例如公共代理：
 
 ```bash
 export MT_PROXY="http://127.0.0.1:7890"
-export MT_TGBOT_TOKEN="123456:telegram_token"
-export MT_TGBOT_CHAT_ID="-1001234567890"
 ```
 
 建议多账号分别配置 `MT_DB_PATH`，避免不同账号共用同一个 token 缓存。
+
+任务执行结束后，`ql_mtlogin.py` 会调用青龙面板内置 `notify.py` 发送通知；成功和失败都会通知。通知渠道请在青龙面板「系统设置」或通知配置中统一配置，不需要在本脚本里配置 Telegram、QQPush、飞书或 ntfy 变量。
 
 ### 定时任务示例
 

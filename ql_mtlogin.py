@@ -21,28 +21,6 @@
   MT_UA               User-Agent
   MT_API_HOST         API 域名
   MT_API_REFERER      Referer
-  MT_QQPUSH           QQ 推送 QQ 号
-  MT_QQPUSH_TOKEN     QQ 推送 token
-  MT_WXCORPID         微信企业号 corpid
-  MT_WXAGENTSECRET    微信企业号 agentsecret
-  MT_WXAGENTID        微信企业号 agentid
-  MT_WXUSERID         微信企业号 userid
-  MT_DING_TALK_ROBOT_WEBHOOK_TOKEN  钉钉机器人 webhook
-  MT_DING_TALK_ROBOT_SECRET         钉钉机器人 secret
-  MT_DING_TALK_ROBOT_AT_MOBILES     钉钉 @手机号
-  MT_TGBOT_TOKEN      Telegram Bot token
-  MT_TGBOT_CHAT_ID    Telegram chat id
-  MT_TGBOT_PROXY      Telegram 代理
-  MT_FEISHU_WEBHOOKURL  飞书 webhook
-  MT_FEISHU_SECRET      飞书 secret
-  MT_FEISHU_APP_ID      飞书应用 app_id
-  MT_FEISHU_APP_SECRET  飞书应用 secret
-  MT_FEISHU_RECEIVE_ID  飞书接收者 ID
-  MT_NTFY_URL         ntfy 地址
-  MT_NTFY_TOPIC       ntfy topic
-  MT_NTFY_USER        ntfy 用户名
-  MT_NTFY_PASSWORD    ntfy 密码
-  MT_NTFY_TOKEN       ntfy token
   MT_TIME_OUT         超时（秒）
   MT_DB_PATH          cookie 持久化路径
   MT_COOKIE_MODE      cookie 模式 (normal/strict)
@@ -53,11 +31,15 @@
 import os
 import sys
 import time
+from pathlib import Path
 
 # 确保当前目录在 sys.path 中，以便 import mtlogin
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mtlogin import Config, JobServer, log_info
+
+
+DEFAULT_QL_DB_PATH = "/ql/data/db/mt/cookie.db"
 
 
 # ── 青龙环境变量映射表 ──────────────────────────────────────────
@@ -72,28 +54,6 @@ ENV_MAP = [
     ("MT_UA", "ua", str),
     ("MT_API_HOST", "api_host", str),
     ("MT_API_REFERER", "referer", str),
-    ("MT_QQPUSH", "qqpush", str),
-    ("MT_QQPUSH_TOKEN", "qqpush_token", str),
-    ("MT_WXCORPID", "wxcorpid", str),
-    ("MT_WXAGENTSECRET", "wxagentsecret", str),
-    ("MT_WXAGENTID", "wxagentid", int),
-    ("MT_WXUSERID", "wxuserid", str),
-    ("MT_DING_TALK_ROBOT_WEBHOOK_TOKEN", "ding_talk_robot_webhook_token", str),
-    ("MT_DING_TALK_ROBOT_SECRET", "ding_talk_robot_secret", str),
-    ("MT_DING_TALK_ROBOT_AT_MOBILES", "ding_talk_robot_at_mobiles", str),
-    ("MT_TGBOT_TOKEN", "tgbot_token", str),
-    ("MT_TGBOT_CHAT_ID", "tgbot_chat_id", int),
-    ("MT_TGBOT_PROXY", "tgbot_proxy", str),
-    ("MT_FEISHU_WEBHOOKURL", "feishu_webhookurl", str),
-    ("MT_FEISHU_SECRET", "feishu_secret", str),
-    ("MT_FEISHU_APP_ID", "feishu_app_id", str),
-    ("MT_FEISHU_APP_SECRET", "feishu_app_secret", str),
-    ("MT_FEISHU_RECEIVE_ID", "feishu_receive_id", str),
-    ("MT_NTFY_URL", "ntfy_url", str),
-    ("MT_NTFY_TOPIC", "ntfy_topic", str),
-    ("MT_NTFY_USER", "ntfy_user", str),
-    ("MT_NTFY_PASSWORD", "ntfy_password", str),
-    ("MT_NTFY_TOKEN", "ntfy_token", str),
     ("MT_TIME_OUT", "timeout", int),
     ("MT_DB_PATH", "db_path", str),
     ("MT_VERSION", "version", str),
@@ -106,6 +66,12 @@ def _bool_env(name: str) -> bool:
     """将青龙环境变量转为布尔值：1/true/yes -> True"""
     v = os.getenv(name, "")
     return v.strip().lower() in ("1", "true", "yes")
+
+
+def fail_with_notify(message: str) -> None:
+    log_info(message)
+    send_ql_notify("M-Team 保活异常", message)
+    raise SystemExit(message)
 
 
 def parse_accounts() -> list:
@@ -132,8 +98,7 @@ def parse_accounts() -> list:
         if len(parts) > 1 and len(parts) != account_count:
             msg = (f"环境变量 {item['env_name']} 拆分数量 ({len(parts)}) "
                    f"与账号总数 ({account_count}) 不一致，请检查 & 分隔符数量")
-            log_info(msg)
-            raise SystemExit(msg)
+            fail_with_notify(msg)
 
     accounts = []
     for i in range(account_count):
@@ -153,37 +118,37 @@ def build_config(acc: dict, skip_cache: bool = False) -> Config:
         password=acc.get("password", ""),
         totpsecret=acc.get("totpsecret", ""),
         proxy=acc.get("proxy", ""),
-        qqpush=acc.get("qqpush", ""),
-        qqpush_token=acc.get("qqpush_token", ""),
+        qqpush="",
+        qqpush_token="",
         m_team_auth=acc.get("m_team_auth", ""),
         ua=acc.get("ua") or Config.ua,
         api_host=acc.get("api_host") or "api.m-team.io",
         referer=acc.get("referer") or "https://kp.m-team.cc/",
-        wxcorpid=acc.get("wxcorpid", ""),
-        wxagentsecret=acc.get("wxagentsecret", ""),
-        wxagentid=acc.get("wxagentid", 0),
-        wxuserid=acc.get("wxuserid", "@all"),
+        wxcorpid="",
+        wxagentsecret="",
+        wxagentid=0,
+        wxuserid="@all",
         timeout=acc.get("timeout", 60),
-        db_path=acc.get("db_path") or "/data/cookie.db",
+        db_path=acc.get("db_path") or DEFAULT_QL_DB_PATH,
         version=acc.get("version") or "1.1.4",
         web_version=acc.get("web_version") or "1140",
         m_team_did=acc.get("m_team_did", ""),
-        ding_talk_robot_webhook_token=acc.get("ding_talk_robot_webhook_token", ""),
-        ding_talk_robot_secret=acc.get("ding_talk_robot_secret", ""),
-        ding_talk_robot_at_mobiles=acc.get("ding_talk_robot_at_mobiles", ""),
-        tgbot_token=acc.get("tgbot_token", ""),
-        tgbot_chat_id=acc.get("tgbot_chat_id", 0),
-        tgbot_proxy=acc.get("tgbot_proxy", ""),
-        feishu_webhookurl=acc.get("feishu_webhookurl", ""),
-        feishu_secret=acc.get("feishu_secret", ""),
-        feishu_app_id=acc.get("feishu_app_id", ""),
-        feishu_app_secret=acc.get("feishu_app_secret", ""),
-        feishu_receive_id=acc.get("feishu_receive_id", ""),
-        ntfy_url=acc.get("ntfy_url", ""),
-        ntfy_topic=acc.get("ntfy_topic", ""),
-        ntfy_user=acc.get("ntfy_user", ""),
-        ntfy_password=acc.get("ntfy_password", ""),
-        ntfy_token=acc.get("ntfy_token", ""),
+        ding_talk_robot_webhook_token="",
+        ding_talk_robot_secret="",
+        ding_talk_robot_at_mobiles="",
+        tgbot_token="",
+        tgbot_chat_id=0,
+        tgbot_proxy="",
+        feishu_webhookurl="",
+        feishu_secret="",
+        feishu_app_id="",
+        feishu_app_secret="",
+        feishu_receive_id="",
+        ntfy_url="",
+        ntfy_topic="",
+        ntfy_user="",
+        ntfy_password="",
+        ntfy_token="",
         cookie_mode=acc.get("cookie_mode", "normal"),
         skip_cache=skip_cache,
     )
@@ -196,7 +161,7 @@ def validate_account(acc: dict, index: int) -> None:
     missing = [name for name in ("username", "password", "totpsecret") if not acc.get(name)]
     if missing:
         readable = ", ".join(f"MT_{name.upper()}" for name in missing)
-        raise SystemExit(f"{label} 缺少必要配置: {readable}；或配置 MT_M_TEAM_AUTH")
+        fail_with_notify(f"{label} 缺少必要配置: {readable}；或配置 MT_M_TEAM_AUTH")
 
 
 def print_config_summary(accounts: list, skip_cache: bool, dry_run: bool) -> None:
@@ -208,8 +173,43 @@ def print_config_summary(accounts: list, skip_cache: bool, dry_run: bool) -> Non
             f"has_password={bool(acc.get('password'))}, "
             f"has_totpsecret={bool(acc.get('totpsecret'))}, "
             f"has_m_team_auth={bool(acc.get('m_team_auth'))}, "
-            f"db_path={acc.get('db_path') or '/data/cookie.db'}"
+            f"db_path={acc.get('db_path') or DEFAULT_QL_DB_PATH}"
         )
+
+
+def send_ql_notify(title: str, content: str) -> None:
+    """调用青龙内置 notify.py 发送通知；本地运行时不存在则只记录日志。"""
+    notify_paths = [
+        Path("/ql/data/scripts/notify.py"),
+        Path("/ql/scripts/notify.py"),
+        Path(__file__).resolve().parent / "notify.py",
+    ]
+    notify_file = next((path for path in notify_paths if path.exists()), None)
+    if not notify_file:
+        log_info("未找到青龙 notify.py，跳过青龙面板通知")
+        return
+
+    try:
+        sys.path.insert(0, str(notify_file.parent))
+        from notify import send  # type: ignore
+
+        send(title, content)
+        log_info("青龙面板通知发送完成")
+    except Exception as exc:
+        log_info(f"青龙面板通知发送失败: {exc}")
+
+
+def build_ql_notify_content(total: int, success_count: int, failed_accounts: list) -> tuple:
+    failed_count = total - success_count
+    title = "M-Team 保活成功" if failed_count == 0 else "M-Team 保活异常"
+    lines = [
+        f"总账号: {total}",
+        f"成功: {success_count}",
+        f"失败: {failed_count}",
+    ]
+    if failed_accounts:
+        lines.append("失败账号: " + ", ".join(failed_accounts))
+    return title, "\n".join(lines)
 
 
 def run_one_account(acc: dict, index: int, total: int, skip_cache: bool) -> bool:
@@ -235,8 +235,7 @@ def main():
 
     accounts = parse_accounts()
     if not accounts or not any(any(v not in ("", 0) for v in acc.values()) for acc in accounts):
-        log_info("未检测到任何账号配置，请设置 MT_USERNAME / MT_PASSWORD / MT_TOTPSECRET 环境变量")
-        sys.exit(1)
+        fail_with_notify("未检测到任何账号配置，请设置 MT_USERNAME / MT_PASSWORD / MT_TOTPSECRET 环境变量")
 
     log_info(f"检测到 {len(accounts)} 个账号")
 
@@ -252,9 +251,12 @@ def main():
 
     if dry_run:
         log_info("MT_DRY_RUN=1，仅验证青龙环境变量解析，不执行网络请求")
+        title, content = build_ql_notify_content(len(accounts), len(accounts), [])
+        send_ql_notify(title, content)
         return
 
     success_count = 0
+    failed_accounts = []
     for i, acc in enumerate(accounts):
         if i > 0:
             wait_sec = 3
@@ -262,8 +264,12 @@ def main():
             time.sleep(wait_sec)
         if run_one_account(acc, i, len(accounts), skip_cache):
             success_count += 1
+        else:
+            failed_accounts.append(acc.get("username") or f"账号{i + 1}")
 
     log_info(f"全部任务完成: {success_count}/{len(accounts)} 个账号成功")
+    title, content = build_ql_notify_content(len(accounts), success_count, failed_accounts)
+    send_ql_notify(title, content)
     if success_count == 0:
         sys.exit(1)
 
