@@ -163,6 +163,8 @@ python3 ql_mtlogin.py
 https://github.com/CangShui/mtlogin-py.git
 ```
 
+订阅时建议包含 `ql_mtlogin.py`。脚本头部已提供青龙识别用的 `# cron:` 和 `# new Env('M-Team 保活')`，订阅生成的任务名称应为 `M-Team 保活`。
+
 依赖安装：
 
 ```bash
