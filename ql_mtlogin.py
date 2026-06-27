@@ -30,15 +30,36 @@
   MT_VERBOSE_CONFIG   打印启动配置 (1/true)
 """
 
+import importlib.util
+from importlib.machinery import SourceFileLoader
 import os
 import sys
 import time
 from pathlib import Path
 
-# 确保当前目录在 sys.path 中，以便 import mtlogin
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+def resolve_core_path() -> Path:
+    candidates = [Path(__file__).resolve().parent / "mtlogin"]
+    ql_repo_dir = Path(os.getenv("QL_REPO_DIR", "/ql/data/repo"))
+    if ql_repo_dir.exists():
+        candidates.extend(ql_repo_dir.glob("**/mtlogin"))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError("无法加载核心脚本 mtlogin，请确认订阅已拉取完整仓库")
 
-from mtlogin import Config, JobServer, log_info
+
+CORE_PATH = resolve_core_path()
+_loader = SourceFileLoader("mtlogin_core", str(CORE_PATH))
+_spec = importlib.util.spec_from_loader(_loader.name, _loader)
+if _spec is None:
+    raise RuntimeError(f"无法加载核心脚本: {CORE_PATH}")
+mtlogin_core = importlib.util.module_from_spec(_spec)
+sys.modules[_loader.name] = mtlogin_core
+_loader.exec_module(mtlogin_core)
+
+Config = mtlogin_core.Config
+JobServer = mtlogin_core.JobServer
+log_info = mtlogin_core.log_info
 
 
 DEFAULT_QL_DB_PATH = "/ql/data/db/mt/cookie.db"

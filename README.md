@@ -1,6 +1,6 @@
-# mtlogin.py 使用说明
+# mtlogin 使用说明
 
-一个用于 M-Team 账号保活/状态刷新的 Python 脚本。 基于项目https://github.com/scjtqs2/mtlogin 通过python重构
+一个用于 M-Team 账号保活/状态刷新的 Python 脚本。 基于项目https://github.com/scjtqs2/mtlogin 通过 Python 重构
 
 脚本会进行登录（或复用本地缓存 token），然后请求一组接口并尝试调用 `updateLastBrowse` 更新浏览状态；支持 Telegram/QQPush/Feishu/ntfy 通知。
 
@@ -14,11 +14,11 @@ pip install -r requirements.txt
 ```
 ## 快速开始
 ```bash
-python mtlogin.py  --username "站点用户名"   --password "站点密码"   --totpsecret "TOTP密钥"   --tgbot-token "00000000000:AAAAAAAAAAAAAAAAAAAAAAA"  --tgbot-chat-id "-1000000000000"  --log-file /var/log/mtlogin.log   --db-path /root/mtlogin.db
+python mtlogin  --username "站点用户名"   --password "站点密码"   --totpsecret "TOTP密钥"   --tgbot-token "00000000000:AAAAAAAAAAAAAAAAAAAAAAA"  --tgbot-chat-id "-1000000000000"  --log-file /var/log/mtlogin.log   --db-path /root/mtlogin.db
 ```
 如果想要打印请求详情：
 ```bash
-python mtlogin.py  --username "站点用户名"   --password "站点密码"   --totpsecret "TOTP密钥"   --tgbot-token "00000000000:AAAAAAAAAAAAAAAAAAAAAAA"  --tgbot-chat-id "-1000000000000"  --log-file /var/log/mtlogin.log   --db-path /root/mtlogin.db  --verbose-config  --skip-cache
+python mtlogin  --username "站点用户名"   --password "站点密码"   --totpsecret "TOTP密钥"   --tgbot-token "00000000000:AAAAAAAAAAAAAAAAAAAAAAA"  --tgbot-chat-id "-1000000000000"  --log-file /var/log/mtlogin.log   --db-path /root/mtlogin.db  --verbose-config  --skip-cache
 ```
 ## 定时执行
 ```bash
@@ -36,7 +36,7 @@ nano /etc/crontab
 ## 命令行参数
 
 ```bash
-python mtlogin.py [options]
+python mtlogin [options]
 ```
 
 | 参数 | 类型 | 默认值 | 说明 |
@@ -163,7 +163,7 @@ python3 ql_mtlogin.py
 https://github.com/CangShui/mtlogin-py.git
 ```
 
-订阅时建议包含 `ql_mtlogin.py`。脚本头部已提供青龙识别用的 `# cron:` 和 `# new Env('M-Team 保活')`，订阅生成的任务名称应为 `M-Team 保活`。
+订阅时建议只匹配 `ql_mtlogin.py`。当前仓库根目录只有 `ql_mtlogin.py` 带 `.py` 后缀，核心本地脚本为无后缀的 `mtlogin`，用于避免青龙订阅自动生成两个定时任务。脚本头部已提供青龙识别用的 `# cron:` 和 `# new Env('M-Team 保活')`，订阅生成的任务名称应为 `M-Team 保活`。
 
 依赖安装：
 
