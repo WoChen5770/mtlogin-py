@@ -32,9 +32,11 @@
 
 import importlib.util
 from importlib.machinery import SourceFileLoader
+import json
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 def resolve_core_path() -> Path:
@@ -58,7 +60,7 @@ sys.modules[_loader.name] = mtlogin_core
 _loader.exec_module(mtlogin_core)
 
 Config = mtlogin_core.Config
-JobServer = mtlogin_core.JobServer
+MTClient = mtlogin_core.MTClient
 log_info = mtlogin_core.log_info
 
 
@@ -222,36 +224,182 @@ def send_ql_notify(title: str, content: str) -> None:
         log_info(f"青龙面板通知发送失败: {exc}")
 
 
-def build_ql_notify_content(total: int, success_count: int, failed_accounts: list) -> tuple:
+
+def format_bytes(value: int) -> str:
+    sign = "-" if value < 0 else ""
+    size = abs(float(value))
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    unit = units[0]
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            break
+        size /= 1024
+    if unit == "B":
+        return f"{sign}{int(size)} {unit}"
+    return f"{sign}{size:.2f} {unit}"
+
+
+def format_number_delta(value: float) -> str:
+    sign = "+" if value > 0 else ""
+    if abs(value - round(value)) < 0.000001:
+        return f"{sign}{int(round(value))}"
+    return f"{sign}{value:.2f}"
+
+
+def format_duration(seconds: int) -> str:
+    if seconds < 0:
+        seconds = 0
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}天")
+    if hours:
+        parts.append(f"{hours}小时")
+    if minutes:
+        parts.append(f"{minutes}分钟")
+    if seconds or not parts:
+        parts.append(f"{seconds}秒")
+    return "".join(parts)
+
+
+def parse_snapshot_time(value: str) -> datetime | None:
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(value[:19], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def snapshot_key(name: str, index: int) -> str:
+    safe_name = name or f"account-{index + 1}"
+    return f"ql-mtlogin-snapshot:{safe_name}"
+
+
+def load_snapshot(client, name: str, index: int) -> dict:
+    raw = client.store.get(snapshot_key(name, index))
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_snapshot(client, key_name: str, snapshot: dict, index: int) -> None:
+    client.store.put(snapshot_key(key_name, index), json.dumps(snapshot, ensure_ascii=False))
+
+
+def build_account_result(client, previous: dict, index: int, run_at: str) -> dict:
+    name = client.username or f"账号{index + 1}"
+    current = {
+        "username": name,
+        "uploaded_bytes": client.uploaded_bytes,
+        "downloaded_bytes": client.downloaded_bytes,
+        "bonus": client.bonus_value,
+        "run_at": run_at,
+    }
+    result = {
+        "ok": True,
+        "username": name,
+        "uploaded": client.uploaded,
+        "downloaded": client.downloaded,
+        "bonus": client.bonus,
+        "previous_run_at": previous.get("run_at") or client.last_browse or "无记录",
+        "current_run_at": run_at,
+        "first_snapshot": not previous,
+        "snapshot": current,
+    }
+    if previous:
+        previous_time = parse_snapshot_time(str(previous.get("run_at", "")))
+        current_time = parse_snapshot_time(run_at)
+        if previous_time and current_time:
+            result["elapsed"] = format_duration(int((current_time - previous_time).total_seconds()))
+        else:
+            result["elapsed"] = "未知"
+        result["uploaded_delta"] = client.uploaded_bytes - int(previous.get("uploaded_bytes", 0) or 0)
+        result["downloaded_delta"] = client.downloaded_bytes - int(previous.get("downloaded_bytes", 0) or 0)
+        result["bonus_delta"] = client.bonus_value - float(previous.get("bonus", 0) or 0)
+    else:
+        result["elapsed"] = "首次记录"
+        result["uploaded_delta"] = None
+        result["downloaded_delta"] = None
+        result["bonus_delta"] = None
+    return result
+
+
+def build_ql_notify_content(results: list) -> tuple:
+    total = len(results)
+    success_count = sum(1 for item in results if item.get("ok"))
     failed_count = total - success_count
     title = "M-Team 保活成功" if failed_count == 0 else "M-Team 保活异常"
-    lines = [
-        f"总账号: {total}",
-        f"成功: {success_count}",
-        f"失败: {failed_count}",
-    ]
-    if failed_accounts:
-        lines.append("失败账号: " + ", ".join(failed_accounts))
+    lines = [f"总账号: {total}", f"成功: {success_count}", f"失败: {failed_count}"]
+    for idx, item in enumerate(results, 1):
+        lines.append("")
+        name = item.get("username") or f"账号{idx}"
+        if not item.get("ok"):
+            lines.extend([f"账号 {idx}: {name}", "状态: 失败", f"错误: {item.get('error', '未知错误')}"])
+            continue
+        lines.extend([
+            f"账号 {idx}: {name}",
+            "状态: 成功",
+            f"上传量: {item['uploaded']}",
+            f"下载量: {item['downloaded']}",
+            f"魔力值: {item['bonus']}",
+            f"上次保活时间: {item['previous_run_at']}",
+            f"本次保活时间: {item['current_run_at']}",
+        ])
+        if item.get("first_snapshot"):
+            lines.append("距离上次保活: 首次记录")
+        else:
+            lines.extend([
+                f"距离上次保活: {item.get('elapsed', '未知')}",
+                f"上传量变化: {format_bytes(item['uploaded_delta'])}",
+                f"下载量变化: {format_bytes(item['downloaded_delta'])}",
+                f"魔力值变化: {format_number_delta(item['bonus_delta'])}",
+            ])
     return title, "\n".join(lines)
 
 
-def run_one_account(acc: dict, index: int, total: int, skip_cache: bool) -> bool:
-    """运行单个账号的签到流程，返回是否成功"""
-    label = f"账号 {index+1}/{total}"
+def run_one_account(acc: dict, index: int, total: int, skip_cache: bool) -> dict:
+    label = f"账号 {index + 1}/{total}"
     if acc.get("username"):
         label += f" ({acc['username']})"
     log_info(f"--- {label} 开始 ---")
 
     cfg = build_config(acc, skip_cache=skip_cache)
+    client = MTClient(cfg)
+    previous_name = acc.get("username") or f"account-{index + 1}"
+    previous = load_snapshot(client, previous_name, index)
     try:
-        job = JobServer(cfg)
-        job.run_once()
-        log_info(f"--- {label} 成功 ---")
-        return True
-    except Exception as e:
-        log_info(f"--- {label} 失败: {e} ---")
-        return False
+        if not cfg.m_team_auth and not cfg.m_team_did:
+            client.login()
+        client.check()
+    except RuntimeError as exc:
+        if "Full authentication is required" not in str(exc):
+            log_info(f"--- {label} 失败: {exc} ---")
+            return {"ok": False, "username": acc.get("username") or f"账号{index + 1}", "error": str(exc)}
+        log_info("Cached token expired, retrying with fresh login (username+password+TOTP)")
+        try:
+            client.login(force=True)
+            client.check()
+        except Exception as retry_exc:
+            log_info(f"--- {label} 失败: {retry_exc} ---")
+            return {"ok": False, "username": acc.get("username") or f"账号{index + 1}", "error": str(retry_exc)}
+    except Exception as exc:
+        log_info(f"--- {label} 失败: {exc} ---")
+        return {"ok": False, "username": acc.get("username") or f"账号{index + 1}", "error": str(exc)}
 
+    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    result = build_account_result(client, previous, index, run_at)
+    save_snapshot(client, previous_name, result["snapshot"], index)
+    log_info(f"--- {label} 成功 ---")
+    return result
 
 def main():
     log_info("青龙面板 m-team 保活脚本启动 (ql_mtlogin.py)")
@@ -274,24 +422,35 @@ def main():
 
     if dry_run:
         log_info("MT_DRY_RUN=1，仅验证青龙环境变量解析，不执行网络请求")
-        title, content = build_ql_notify_content(len(accounts), len(accounts), [])
+        dry_results = []
+        for i, acc in enumerate(accounts):
+            name = acc.get("username") or f"账号{i + 1}"
+            dry_results.append({
+                "ok": True,
+                "username": name,
+                "uploaded": "0.00 Gb",
+                "downloaded": "0.00 Gb",
+                "bonus": "0",
+                "previous_run_at": "dry-run",
+                "current_run_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "first_snapshot": True,
+                "elapsed": "首次记录",
+            })
+        title, content = build_ql_notify_content(dry_results)
         send_ql_notify(title, content)
         return
 
-    success_count = 0
-    failed_accounts = []
+    results = []
     for i, acc in enumerate(accounts):
         if i > 0:
             wait_sec = 3
             log_info(f"等待 {wait_sec} 秒后处理下一个账号...")
             time.sleep(wait_sec)
-        if run_one_account(acc, i, len(accounts), skip_cache):
-            success_count += 1
-        else:
-            failed_accounts.append(acc.get("username") or f"账号{i + 1}")
+        results.append(run_one_account(acc, i, len(accounts), skip_cache))
 
+    success_count = sum(1 for item in results if item.get("ok"))
     log_info(f"全部任务完成: {success_count}/{len(accounts)} 个账号成功")
-    title, content = build_ql_notify_content(len(accounts), success_count, failed_accounts)
+    title, content = build_ql_notify_content(results)
     send_ql_notify(title, content)
     if success_count == 0:
         sys.exit(1)

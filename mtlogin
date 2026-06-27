@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import base64
 import argparse
 import hashlib
@@ -126,6 +126,9 @@ class MTClient:
         self.uploaded = ""
         self.downloaded = ""
         self.bonus = ""
+        self.uploaded_bytes = 0
+        self.downloaded_bytes = 0
+        self.bonus_value = 0.0
         self.username = ""
         self.last_login = ""
         self.last_browse = ""
@@ -292,8 +295,14 @@ class MTClient:
             raise RuntimeError(f"Cookie is invalid or expired: {profile.text}")
         member = data.get("data", {}).get("memberCount", {})
         status = data.get("data", {}).get("memberStatus", {})
-        self.uploaded = f"{int(member.get('uploaded', 0))/1073741824:.2f} Gb"
-        self.downloaded = f"{int(member.get('downloaded', 0))/1073741824:.2f} Gb"
+        self.uploaded_bytes = int(member.get('uploaded', 0))
+        self.downloaded_bytes = int(member.get('downloaded', 0))
+        try:
+            self.bonus_value = float(member.get("bonus", 0) or 0)
+        except (TypeError, ValueError):
+            self.bonus_value = 0.0
+        self.uploaded = f"{self.uploaded_bytes/1073741824:.2f} Gb"
+        self.downloaded = f"{self.downloaded_bytes/1073741824:.2f} Gb"
         self.bonus = str(member.get("bonus", ""))
         self.username = data.get("data", {}).get("username", "")
         self.last_login = status.get("lastLogin", "")
