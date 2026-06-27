@@ -147,3 +147,97 @@ python mtlogin.py [options]
 
 删除你配置的数据库文件（例如 `./mtlogin.db`）后重跑，或在失败策略触发时让脚本自动清理。
 
+## 青龙面板部署
+
+本项目已提供青龙入口脚本：`ql_mtlogin.py`。青龙任务命令建议使用：
+
+```bash
+python3 ql_mtlogin.py
+```
+
+### 拉库与依赖
+
+青龙面板进入「订阅管理」后添加仓库：
+
+```text
+https://github.com/CangShui/mtlogin-py.git
+```
+
+依赖安装：
+
+```bash
+pip3 install -r requirements.txt
+```
+
+如果青龙使用的是 Python3 环境，也可以在依赖管理里安装：
+
+```text
+pyotp
+requests
+curl-cffi
+```
+
+### 青龙环境变量
+
+青龙入口统一使用 `MT_` 前缀变量，避免与面板或其他脚本的通用变量冲突。
+
+| 环境变量 | 必填 | 说明 |
+|---|---|---|
+| `MT_USERNAME` | 条件必填 | M-Team 用户名；使用 `MT_M_TEAM_AUTH` 时可不填 |
+| `MT_PASSWORD` | 条件必填 | M-Team 密码；使用 `MT_M_TEAM_AUTH` 时可不填 |
+| `MT_TOTPSECRET` | 条件必填 | TOTP 二次验证密钥；使用 `MT_M_TEAM_AUTH` 时可不填 |
+| `MT_M_TEAM_AUTH` | 否 | 已有 Authorization token，有值时跳过账号密码登录 |
+| `MT_M_TEAM_DID` | 否 | 设备 DID |
+| `MT_PROXY` | 否 | HTTP/HTTPS 代理地址 |
+| `MT_DB_PATH` | 否 | SQLite 缓存路径，默认 `/data/cookie.db` |
+| `MT_SKIP_CACHE` | 否 | 设置为 `1`/`true` 时跳过本地 token 缓存 |
+| `MT_VERBOSE_CONFIG` | 否 | 设置为 `1`/`true` 时打印脱敏启动配置 |
+| `MT_DRY_RUN` | 否 | 设置为 `1`/`true` 时只验证变量解析，不请求网络 |
+| `MT_TGBOT_TOKEN` | 否 | Telegram Bot Token |
+| `MT_TGBOT_CHAT_ID` | 否 | Telegram Chat ID |
+| `MT_TGBOT_PROXY` | 否 | Telegram 代理 |
+| `MT_QQPUSH` | 否 | QQ 推送目标 QQ 号 |
+| `MT_QQPUSH_TOKEN` | 否 | QQPush Token |
+| `MT_FEISHU_WEBHOOKURL` | 否 | 飞书 Webhook |
+| `MT_NTFY_URL` | 否 | ntfy 服务地址 |
+| `MT_NTFY_TOPIC` | 否 | ntfy topic |
+
+### 多账号配置
+
+多个账号使用 `&` 分隔，同一组变量按位置一一对应：
+
+```bash
+export MT_USERNAME="user1&user2"
+export MT_PASSWORD="pass1&pass2"
+export MT_TOTPSECRET="totp_secret1&totp_secret2"
+export MT_DB_PATH="/ql/data/db/mtlogin_user1.db&/ql/data/db/mtlogin_user2.db"
+```
+
+如果某个变量只配置一个值，会作为所有账号的公共配置使用，例如公共代理或公共通知配置：
+
+```bash
+export MT_PROXY="http://127.0.0.1:7890"
+export MT_TGBOT_TOKEN="123456:telegram_token"
+export MT_TGBOT_CHAT_ID="-1001234567890"
+```
+
+建议多账号分别配置 `MT_DB_PATH`，避免不同账号共用同一个 token 缓存。
+
+### 定时任务示例
+
+青龙「定时任务」中新增任务：
+
+```text
+名称：M-Team 保活
+命令：python3 ql_mtlogin.py
+定时：12 */6 * * *
+```
+
+首次配置后可以先开启 dry-run 验证变量解析：
+
+```bash
+MT_VERBOSE_CONFIG=1 MT_DRY_RUN=1 python3 ql_mtlogin.py
+```
+
+确认账号数量、必填项和缓存路径无误后，再关闭 `MT_DRY_RUN` 正式运行。
+
